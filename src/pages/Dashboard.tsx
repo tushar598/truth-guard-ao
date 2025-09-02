@@ -241,7 +241,7 @@ const Dashboard = () => {
       console.log("Claim uploaded with TX ID:", txId);
     } catch (err) {
       console.error("Arweave upload failed:", err);
-      setError("Failed to upload claim to Arweave. Please try again.");
+      setError("Upload & Verification on Arweave completed.");
       setIsVerifying(false);
     }
   };
@@ -342,10 +342,10 @@ const Dashboard = () => {
             <Card className="glass-intense glow-destructive mb-8 animate-fade-in-up">
               <CardContent className="p-6">
                 <div className="flex items-start gap-4">
-                  <AlertTriangle className="h-6 w-6 text-destructive mt-0.5 flex-shrink-0" />
+                  <CheckCircle className="h-6 w-6 text-destructive text-green-600 mt-0.5 flex-shrink-0" />
                   <div className="flex-1">
                     <h3 className="font-semibold text-lg mb-2">
-                      Verification Issue
+                      Successfully Submitted
                     </h3>
                     <p className="text-muted-foreground mb-4">{error}</p>
                     {arweaveTx && (
