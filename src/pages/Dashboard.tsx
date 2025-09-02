@@ -33,8 +33,7 @@ const fetchWithRetry = async (
       if (response.ok) return response;
 
       if (response.status === 429) {
-        // Rate limited, wait longer
-        await delay(1000 * Math.pow(2, i));
+        await delay(1000 * Math.pow(2, i)); // exponential backoff
         continue;
       }
 
@@ -72,7 +71,6 @@ const fetchResultByRequest = async (requestTxId: string) => {
     `,
   };
 
-  // Try multiple GraphQL endpoints
   const endpoints = [
     "https://arweave.net/graphql",
     "https://arweave.search.goldsky.com/graphql",
@@ -89,7 +87,6 @@ const fetchResultByRequest = async (requestTxId: string) => {
         body: JSON.stringify(query),
       });
 
-      // Check if response is OK before parsing as JSON
       if (!res.ok) {
         console.warn(`Endpoint ${endpoint} returned status: ${res.status}`);
         continue;
@@ -116,17 +113,22 @@ const fetchResultByRequest = async (requestTxId: string) => {
       const resultTxId = data.data.transactions.edges[0].node.id;
       console.log(`Found result transaction: ${resultTxId}`);
 
-      // Try to fetch the actual result data
       const resultData = await getData(resultTxId);
       if (resultData) {
-        console.log("Successfully fetched result data:", resultData);
-        return resultData;
-      } else {
-        console.warn("Found transaction but couldn't fetch data");
+        try {
+          const parsed =
+            typeof resultData === "string"
+              ? JSON.parse(resultData)
+              : resultData;
+          console.log("Successfully parsed result data:", parsed);
+          return parsed;
+        } catch (err) {
+          console.error("Invalid JSON resultData:", resultData);
+          return null;
+        }
       }
     } catch (err) {
       console.error(`Error with endpoint ${endpoint}:`, err);
-      // Continue to next endpoint
     }
   }
 
@@ -141,7 +143,7 @@ const Dashboard = () => {
   const [arweaveTx, setArweaveTx] = useState<string | null>(null);
   const [pollingCount, setPollingCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const pollingRef = useRef<NodeJS.Timeout | null>(null);
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Clear polling on unmount
   useEffect(() => {
@@ -181,7 +183,6 @@ const Dashboard = () => {
             }
           }
 
-          // Stop polling after 12 attempts (60 seconds)
           if (pollingCount >= 11) {
             console.log("Stopping polling after 12 attempts");
             setIsVerifying(false);
@@ -206,7 +207,7 @@ const Dashboard = () => {
         clearInterval(pollingRef.current);
       }
     };
-  }, [arweaveTx, isVerifying, pollingCount]);
+  }, [arweaveTx, isVerifying]); // removed pollingCount dependency
 
   const handleVerify = async () => {
     if (!inputText.trim()) return;
@@ -218,7 +219,6 @@ const Dashboard = () => {
     setError(null);
 
     try {
-      // 1. Connect wallet first
       const address = await connectWallet();
       if (!address) {
         console.error("Wallet not connected");
@@ -229,7 +229,6 @@ const Dashboard = () => {
         return;
       }
 
-      // 2. Upload claim as a FactCheckRequest
       const txId = await uploadData({
         claim: inputText,
         type: "FactCheckRequest",
@@ -249,7 +248,6 @@ const Dashboard = () => {
 
   const retryVerification = async () => {
     if (!arweaveTx) return;
-
     setIsVerifying(true);
     setResult(null);
     setPollingCount(0);
@@ -404,7 +402,7 @@ const Dashboard = () => {
           )}
 
           {/* Results Section */}
-          {result && (
+          {result && result.verdict && (
             <div className="space-y-6 animate-fade-in-up">
               {/* Verdict Card */}
               <Card className="glass-intense glow-primary">
@@ -426,7 +424,7 @@ const Dashboard = () => {
                     <div className="text-lg text-muted-foreground">
                       Confidence Score:{" "}
                       <span className="text-primary font-semibold">
-                        {result.confidence}%
+                        {result.confidence ?? "N/A"}%
                       </span>
                     </div>
                   </div>
@@ -435,7 +433,9 @@ const Dashboard = () => {
                     <h4 className="font-semibold mb-2 text-foreground">
                       Analysis:
                     </h4>
-                    <p className="text-muted-foreground">{result.analysis}</p>
+                    <p className="text-muted-foreground">
+                      {result.analysis ?? "No analysis available."}
+                    </p>
                   </div>
 
                   {arweaveTx && (
@@ -455,17 +455,17 @@ const Dashboard = () => {
               </Card>
 
               {/* Sources Card */}
-              <Card className="glass">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <ExternalLink className="h-5 w-5 text-success" />
-                    Supporting Evidence (Arweave Links)
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    {result.sources &&
-                      result.sources.map((source: any, index: number) => (
+              {result.sources && result.sources.length > 0 && (
+                <Card className="glass">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <ExternalLink className="h-5 w-5 text-success" />
+                      Supporting Evidence (Arweave Links)
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      {result.sources.map((source: any, index: number) => (
                         <div
                           key={index}
                           className="flex items-center justify-between p-3 bg-card/30 rounded-lg"
@@ -473,11 +473,13 @@ const Dashboard = () => {
                           <div className="flex items-center gap-3">
                             <div
                               className={`w-2 h-2 rounded-full ${
-                                source.verified ? "bg-success" : "bg-yellow-500"
+                                source.verified
+                                  ? "bg-success"
+                                  : "bg-yellow-500"
                               }`}
                             />
                             <span className="font-medium text-foreground">
-                              {source.title}
+                              {source.title ?? "Untitled Source"}
                             </span>
                           </div>
                           <Button
@@ -497,9 +499,10 @@ const Dashboard = () => {
                           </Button>
                         </div>
                       ))}
-                  </div>
-                </CardContent>
-              </Card>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
 
               {/* Insurance Card */}
               <Card className="glass">
